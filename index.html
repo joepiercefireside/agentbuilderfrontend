@@ -1,0 +1,324 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agent Builder</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+  <div id="root" class="min-h-screen bg-gray-100"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const supabase = Supabase.createClient(
+      https://lakxetbfkozevwlelzaj.supabase.co,      eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxha3hldGJma296ZXZ3bGVsemFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgwMTcyNzMsImV4cCI6MjA2MzU5MzI3M30.OPKXM8eXcSp_a9GW2F_Jbto_UOTywj8HqyJ4dYqLLog
+    );
+
+    const App = () => {
+      const [user, setUser] = useState(null);
+      const [email, setEmail] = useState('');
+      const [password, setPassword] = useState('');
+      const [agentConfig, setAgentConfig] = useState({
+        name: 'MyAgent',
+        prompt: 'You are a helpful AI assistant.',
+        tools: ['web_search'],
+        trainingData: '',
+      });
+      const [messages, setMessages] = useState([]);
+      const [input, setInput] = useState('');
+      const [agentCreated, setAgentCreated] = useState(false);
+      const [view, setView] = useState('login');
+      const [embedCode, setEmbedCode] = useState('');
+
+      useEffect(() => {
+        const checkUser = async () => {
+          const { data: { user } } = await supabase.auth.getUser();
+          setUser(user);
+          if (user) setView('dashboard');
+        };
+        checkUser();
+      }, []);
+
+      const handleLogin = async () => {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) alert(error.message);
+        else {
+          const { data: { user } } = await supabase.auth.getUser();
+          setUser(user);
+          setView('dashboard');
+        }
+      };
+
+      const handleRegister = async () => {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) alert(error.message);
+        else {
+          const { data: { user } } = await supabase.auth.getUser();
+          setUser(user);
+          setView('dashboard');
+        }
+      };
+
+      const handleLogout = async () => {
+        await supabase.auth.signOut();
+        setUser(null);
+        setView('login');
+      };
+
+      const createAgent = async () => {
+        try {
+          const response = await fetch('http://localhost:8000/create_agent', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session.access_token}`,
+            },
+            body: JSON.stringify({ ...agentConfig, user_id: user.id }),
+          });
+          if (response.ok) {
+            setAgentCreated(true);
+            setMessages([{ sender: 'system', text: `Agent ${agentConfig.name} created!` }]);
+            const embed = `<iframe src="http://localhost:8000/widget/${user.id}/${agentConfig.name}" width="100%" height="500px"></iframe>`;
+            setEmbedCode(embed);
+          } else {
+            alert('Failed to create agent');
+          }
+        } catch (error) {
+          console.error('Error creating agent:', error);
+          alert('Error creating agent');
+        }
+      };
+
+      const sendMessage = async () => {
+        if (!input.trim()) return;
+        const newMessages = [...messages, { sender: 'user', text: input }];
+        setMessages(newMessages);
+        setInput('');
+        try {
+          const response = await fetch('http://localhost:8000/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session.access_token}`,
+            },
+            body: JSON.stringify({ message: input, user_id: user.id, agent_name: agentConfig.name }),
+          });
+          const data = await response.json();
+          setMessages([...newMessages, { sender: 'agent', text: data.response }]);
+        } catch (error) {
+          console.error('Error sending message:', error);
+          setMessages([...newMessages, { sender: 'system', text: 'Error: Could not get response' }]);
+        }
+      };
+
+      if (!user) {
+        return (
+          <div className="container mx-auto p-4 max-w-md">
+            <h1 className="text-3xl font-bold mb-4">AI Agent Builder</h1>
+            <div className="bg-white p-6 rounded shadow">
+              <h2 className="text-xl font-semibold mb-2">{view === 'login' ? 'Login' : 'Register'}</h2>
+              <div className="mb-4">
+                <label className="block text-sm font-medium">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="mt-1 p-2 w-full border rounded"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="mt-1 p-2 w-full border rounded"
+                />
+              </div>
+              <button
+                onClick={view === 'login' ? handleLogin : handleRegister}
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 w-full"
+              >
+                {view === 'login' ? 'Login' : 'Register'}
+              </button>
+              <button
+                onClick={() => setView(view === 'login' ? 'register' : 'login')}
+                className="mt-2 text-blue-500 hover:underline w-full text-center"
+              >
+                {view === 'login' ? 'Need an account? Register' : 'Already have an account? Login'}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="container mx-auto p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-3xl font-bold">AI Agent Builder</h1>
+            <button
+              onClick={handleLogout}
+              className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+            >
+              Logout
+            </button>
+          </div>
+          {!agentCreated ? (
+            <div className="bg-white p-6 rounded shadow mb-4">
+              <h2 className="text-xl font-semibold mb-2">Configure Your Agent</h2>
+              <div className="mb-4">
+                <label className="block text-sm font-medium">Agent Name</label>
+                <input
+                  type="text"
+                  value={agentConfig.name}
+                  onChange={(e) => setAgentConfig({ ...agentConfig, name: e.target.value })}
+                  className="mt-1 p-2 w-full border rounded"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium">System Prompt</label>
+                <textarea
+                  value={agentConfig.prompt}
+                  onChange={(e) => setAgentConfig({ ...agentConfig, prompt: e.target.value })}
+                  className="mt-1 p-2 w-full border rounded"
+                  rows="4"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium">Tools</label>
+                <select
+                  multiple
+                  value={agentConfig.tools}
+                  onChange={(e) =>
+                    setAgentConfig({
+                      ...agentConfig,
+                      tools: Array.from(e.target.selectedOptions, (option) => option.value),
+                    })
+                  }
+                  className="mt-1 p-2 w-full border rounded"
+                >
+                  <option value="web_search">Web Search</option>
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium">Training Data (Text)</label>
+                <textarea
+                  value={agentConfig.trainingData}
+                  onChange={(e) => setAgentConfig({ ...agentConfig, trainingData: e.target.value })}
+                  className="mt-1 p-2 w-full border rounded"
+                  rows="4"
+                  placeholder="Enter text to train your agent..."
+                />
+              </div>
+              <button
+                onClick={createAgent}
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+              >
+                Create Agent
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white p-6 rounded shadow">
+              <h2 className="text-xl font-semibold mb-2">Chat with {agentConfig.name}</h2>
+              <div className="mb-4">
+                <label className="block text-sm font-medium">Embed Code</label>
+                <textarea
+                  value={embedCode}
+                  readOnly
+                  className="mt-1 p-2 w-full border rounded"
+                  rows="3"
+                />
+                <p className="text-sm text-gray-500">Copy this code to embed the chat widget on your website.</p>
+              </div>
+              <div className="h-96 overflow-y-auto mb-4 p-4 border rounded">
+                {messages.map((msg, index) => (
+                  <div
+                    key={index}
+                    className={`mb-2 ${
+                      msg.sender === 'user' ? 'text-right' : 'text-left'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block p-2 rounded ${
+                        msg.sender === 'user'
+                          ? 'bg-blue-100'
+                          : msg.sender === 'agent'
+                          ? 'bg-green-100'
+                          : 'bg-gray-200'
+                      }`}
+                    >
+                      {msg.text}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  className="flex-1 p-2 border rounded-l"
+                  placeholder="Type your message..."
+                />
+                <button
+                  onClick={sendMessage}
+                  className="bg-blue-500 text-white px-4 py-2 rounded-r hover:bg-blue-600"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
