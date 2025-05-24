@@ -8,7 +8,18 @@
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="./supabase.min.js" onerror="console.error('Failed to load local Supabase library: ./supabase.min.js. Check if file exists or is accessible.')"></script>
+  <script src="/supabase.min.js" onerror="loadFallbackSupabase()"></script>
+  <script>
+    console.log('Attempting to load local supabase.min.js');
+    function loadFallbackSupabase() {
+      console.error('Failed to load local supabase.min.js. Trying fallback CDN...');
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
+      script.onerror = () => console.error('Fallback Supabase CDN failed to load');
+      script.onload = () => console.log('Fallback Supabase CDN loaded successfully');
+      document.head.appendChild(script);
+    }
+  </script>
 </head>
 <body>
   <div id="root" class="min-h-screen bg-gray-100"></div>
@@ -39,7 +50,7 @@
             setUser(user);
             if (user) setView('dashboard');
           } catch (error) {
-            console.error('Error checking user:', error.message);
+            console.error('Error checking user:', error);
           }
         };
         if (supabase) checkUser();
@@ -55,7 +66,7 @@
             setView('dashboard');
           }
         } catch (error) {
-          console.error('Login error:', error.message);
+          console.error('Login error:', error);
           alert('Error logging in');
         }
       };
@@ -70,7 +81,7 @@
             setView('dashboard');
           }
         } catch (error) {
-          console.error('Register error:', error.message);
+          console.error('Register error:', error);
           alert('Error registering');
         }
       };
@@ -81,7 +92,7 @@
           setUser(null);
           setView('login');
         } catch (error) {
-          console.error('Logout error:', error.message);
+          console.error('Logout error:', error);
         }
       };
 
@@ -104,7 +115,7 @@
             alert('Failed to create agent');
           }
         } catch (error) {
-          console.error('Error creating agent:', error.message);
+          console.error('Error creating agent:', error);
           alert('Error creating agent');
         }
       };
@@ -126,7 +137,7 @@
           const data = await response.json();
           setMessages([...newMessages, { sender: 'agent', text: data.response }]);
         } catch (error) {
-          console.error('Error sending message:', error.message);
+          console.error('Error sending message:', error);
           setMessages([...newMessages, { sender: 'system', text: 'Error: Could not get response' }]);
         }
       };
@@ -134,8 +145,8 @@
       if (!supabase) {
         return (
           <div className="container mx-auto p-4 text-red-500">
-            Error: Supabase library failed to load from local file. Please check the console for details.
-            <p>Debug: Ensure supabase.min.js exists in the project root and is accessible.</p>
+            Error: Supabase library failed to load from local file or fallback CDN.
+            <p>Debug: Check browser console for details. Ensure /supabase.min.js is accessible.</p>
           </div>
         );
       }
@@ -316,7 +327,7 @@
         console.error('Failed to initialize Supabase client:', error.message);
       }
     } else {
-      console.error('Supabase library not loaded from local file: supabase.min.js');
+      console.error('Supabase global variable not defined. Check local file /supabase.min.js or fallback CDN.');
     }
 
     ReactDOM.render(<App supabase={supabase} />, document.getElementById('root'));
