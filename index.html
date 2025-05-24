@@ -8,14 +8,14 @@
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="./supabase.min.js" onerror="console.error('Failed to load local Supabase library')"></script>
 </head>
 <body>
   <div id="root" class="min-h-screen bg-gray-100"></div>
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // Define App component outside conditional
+    // Define App component
     const App = ({ supabase }) => {
       const [user, setUser] = useState(null);
       const [email, setEmail] = useState('');
@@ -39,7 +39,7 @@
             setUser(user);
             if (user) setView('dashboard');
           } catch (error) {
-            console.error('Error checking user:', error);
+            console.error('Error checking user:', error.message);
           }
         };
         if (supabase) checkUser();
@@ -55,7 +55,7 @@
             setView('dashboard');
           }
         } catch (error) {
-          console.error('Login error:', error);
+          console.error('Login error:', error.message);
           alert('Error logging in');
         }
       };
@@ -70,7 +70,7 @@
             setView('dashboard');
           }
         } catch (error) {
-          console.error('Register error:', error);
+          console.error('Register error:', error.message);
           alert('Error registering');
         }
       };
@@ -81,7 +81,7 @@
           setUser(null);
           setView('login');
         } catch (error) {
-          console.error('Logout error:', error);
+          console.error('Logout error:', error.message);
         }
       };
 
@@ -104,7 +104,7 @@
             alert('Failed to create agent');
           }
         } catch (error) {
-          console.error('Error creating agent:', error);
+          console.error('Error creating agent:', error.message);
           alert('Error creating agent');
         }
       };
@@ -126,7 +126,7 @@
           const data = await response.json();
           setMessages([...newMessages, { sender: 'agent', text: data.response }]);
         } catch (error) {
-          console.error('Error sending message:', error);
+          console.error('Error sending message:', error.message);
           setMessages([...newMessages, { sender: 'system', text: 'Error: Could not get response' }]);
         }
       };
@@ -134,7 +134,7 @@
       if (!supabase) {
         return (
           <div className="container mx-auto p-4 text-red-500">
-            Error: Supabase library failed to load. Please try again later.
+            Error: Supabase library failed to load from local file. Please check the console for details.
           </div>
         );
       }
@@ -305,10 +305,17 @@
     // Initialize Supabase and render
     let supabase = null;
     if (typeof Supabase !== 'undefined') {
-      supabase = Supabase.createClient(
-        'https://lakxetbfkozevwlelzaj.supabase.co',
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxha3hldGJma296ZXZ3bGVsemFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgwMTcyNzMsImE4cCI6MjA2MzU5MzI3M30.OPKXM8eXcSp_a9GW2F_Jbto_UOTywj8HqyJ4dYqLLog'
-      );
+      try {
+        supabase = Supabase.createClient(
+          'https://lakxetbfkozevwlelzaj.supabase.co',
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxha3hldGJma296ZXZ3bGVsemFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgwMTcyNzMsImV4cCI6MjA2MzU5MzI3M30.OPKXM8eXcSp_a9GW2F_Jbto_UOTywj8HqyJ4dYqLLog'
+        );
+        console.log('Supabase initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize Supabase client:', error.message);
+      }
+    } else {
+      console.error('Supabase library not loaded from local file: supabase.min.js');
     }
 
     ReactDOM.render(<App supabase={supabase} />, document.getElementById('root'));
