@@ -8,27 +8,32 @@
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
+  <!-- Firebase SDKs with compatibility mode to avoid module issues -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyCREYWS4Z5MIe-ajD4qZWg6ILwh5r2OEIo",
-      authDomain: "aiagentbuilder-be835.firebaseapp.com",
-      projectId: "aiagentbuilder-be835",
-      storageBucket: "aiagentbuilder-be835.firebasestorage.app",
-      messagingSenderId: "1011961368522",
-      appId: "1:1011961368522:web:41aacbff911c3a852cc933",
-      measurementId: "G-VFSES7SWLF"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
-    console.log('Firebase initialized successfully');
+    try {
+      const firebaseConfig = {
+        apiKey: "AIzaSyCREYWS4Z5MIe-ajD4qZWg6ILwh5r2OEIo",
+        authDomain: "aiagentbuilder-be835.firebaseapp.com",
+        projectId: "aiagentbuilder-be835",
+        storageBucket: "aiagentbuilder-be835.firebasestorage.app",
+        messagingSenderId: "1011961368522",
+        appId: "1:1011961368522:web:41aacbff911c3a852cc933",
+        measurementId: "G-VFSES7SWLF"
+      };
+      firebase.initializeApp(firebaseConfig);
+      window.auth = firebase.auth();
+      window.db = firebase.firestore();
+      console.log('Firebase initialized successfully');
+    } catch (error) {
+      console.error('Firebase initialization failed:', error);
+    }
   </script>
 </head>
 <body>
-  <div id="root" class="min-h-screen bg-gray-100"></div>
+  <div id="root" className="min-h-screen bg-gray-100"></div>
   <script type="text/babel">
     const { useState, useEffect } = React;
 
@@ -39,7 +44,7 @@
       const [agentConfig, setAgentConfig] = useState({
         name: 'MyAgent',
         prompt: 'You are a helpful AI assistant.',
-        tools: ['web_search'],
+        tools: [],
         trainingData: '',
       });
       const [messages, setMessages] = useState([]);
@@ -47,42 +52,54 @@
       const [agentCreated, setAgentCreated] = useState(false);
       const [view, setView] = useState('login');
       const [embedCode, setEmbedCode] = useState('');
+      const [error, setError] = useState(null);
 
       useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged((user) => {
+        if (!window.auth) {
+          setError('Firebase authentication failed to load');
+          return;
+        }
+        const unsubscribe = window.auth.onAuthStateChanged((user) => {
           console.log('Auth state changed:', user ? 'User logged in' : 'No user');
           setUser(user);
           if (user) setView('dashboard');
+        }, (error) => {
+          console.error('Auth state error:', error);
+          setError('Authentication error');
         });
         return () => unsubscribe();
       }, []);
 
       const handleLogin = async () => {
         try {
-          await auth.signInWithEmailAndPassword(email, password);
+          await window.auth.signInWithEmailAndPassword(email, password);
           console.log('Login successful');
+          setError(null);
         } catch (error) {
           console.error('Login error:', error.message);
-          alert(error.message);
+          setError(error.message);
         }
       };
 
       const handleRegister = async () => {
         try {
-          await auth.createUserWithEmailAndPassword(email, password);
+          await window.auth.createUserWithEmailAndPassword(email, password);
           console.log('Registration successful');
+          setError(null);
         } catch (error) {
           console.error('Register error:', error.message);
-          alert(error.message);
+          setError(error.message);
         }
       };
 
       const handleLogout = async () => {
         try {
-          await auth.signOut();
+          await window.auth.signOut();
           console.log('Logout successful');
+          setError(null);
         } catch (error) {
           console.error('Logout error:', error.message);
+          setError(error.message);
         }
       };
 
@@ -98,7 +115,7 @@
             body: JSON.stringify({ ...agentConfig, user_id: user.uid }),
           });
           if (response.ok) {
-            await db.collection('agents').add({
+            await window.db.collection('agents').add({
               user_id: user.uid,
               name: agentConfig.name,
               prompt: agentConfig.prompt,
@@ -111,14 +128,15 @@
             const embed = `<iframe src="https://agentbuilderbackend.onrender.com/widget/${user.uid}/${agentConfig.name}" width="100%" height="500px"></iframe>`;
             setEmbedCode(embed);
             console.log('Agent created successfully');
+            setError(null);
           } else {
             const error = await response.json();
             console.error('Failed to create agent:', error);
-            alert('Failed to create agent');
+            setError('Failed to create agent');
           }
         } catch (error) {
           console.error('Error creating agent:', error.message);
-          alert('Error creating agent');
+          setError('Error creating agent');
         }
       };
 
@@ -138,7 +156,7 @@
             body: JSON.stringify({ message: input, user_id: user.uid, agent_name: agentConfig.name }),
           });
           const data = await response.json();
-          await db.collection('chat_history').add({
+          await window.db.collection('chat_history').add({
             user_id: user.uid,
             agent_name: agentConfig.name,
             message: input,
@@ -147,11 +165,23 @@
           });
           setMessages([...newMessages, { sender: 'agent', text: data.response }]);
           console.log('Message sent and saved');
+          setError(null);
         } catch (error) {
           console.error('Error sending message:', error.message);
           setMessages([...newMessages, { sender: 'system', text: 'Error: Could not get response' }]);
+          setError('Error sending message');
         }
       };
+
+      if (error) {
+        return (
+          <div className="container mx-auto p-4 text-red-500">
+            <h1 className="text-3xl font-bold mb-4">Error</h1>
+            <p>{error}</p>
+            <p>Check browser console for details or try refreshing the page.</p>
+          </div>
+        );
+      }
 
       if (!user) {
         return (
