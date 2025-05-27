@@ -8,17 +8,23 @@
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="/supabase.min.js" onerror="loadFallbackSupabase()"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
   <script>
-    console.log('Attempting to load local supabase.min.js');
-    function loadFallbackSupabase() {
-      console.error('Failed to load local supabase.min.js. Trying fallback CDN...');
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
-      script.onerror = () => console.error('Fallback Supabase CDN failed to load');
-      script.onload = () => console.log('Fallback Supabase CDN loaded successfully');
-      document.head.appendChild(script);
-    }
+    const firebaseConfig = {
+      apiKey: "AIzaSyCREYWS4Z5MIe-ajD4qZWg6ILwh5r2OEIo",
+      authDomain: "aiagentbuilder-be835.firebaseapp.com",
+      projectId: "aiagentbuilder-be835",
+      storageBucket: "aiagentbuilder-be835.firebasestorage.app",
+      messagingSenderId: "1011961368522",
+      appId: "1:1011961368522:web:41aacbff911c3a852cc933",
+      measurementId: "G-VFSES7SWLF"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    console.log('Firebase initialized successfully');
   </script>
 </head>
 <body>
@@ -26,8 +32,7 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // Define App component
-    const App = ({ supabase }) => {
+    const App = () => {
       const [user, setUser] = useState(null);
       const [email, setEmail] = useState('');
       const [password, setPassword] = useState('');
@@ -44,78 +49,75 @@
       const [embedCode, setEmbedCode] = useState('');
 
       useEffect(() => {
-        const checkUser = async () => {
-          try {
-            const { data: { user } } = await supabase.auth.getUser();
-            setUser(user);
-            if (user) setView('dashboard');
-          } catch (error) {
-            console.error('Error checking user:', error);
-          }
-        };
-        if (supabase) checkUser();
-      }, [supabase]);
+        const unsubscribe = auth.onAuthStateChanged((user) => {
+          console.log('Auth state changed:', user ? 'User logged in' : 'No user');
+          setUser(user);
+          if (user) setView('dashboard');
+        });
+        return () => unsubscribe();
+      }, []);
 
       const handleLogin = async () => {
         try {
-          const { error } = await supabase.auth.signInWithPassword({ email, password });
-          if (error) alert(error.message);
-          else {
-            const { data: { user } } = await supabase.auth.getUser();
-            setUser(user);
-            setView('dashboard');
-          }
+          await auth.signInWithEmailAndPassword(email, password);
+          console.log('Login successful');
         } catch (error) {
-          console.error('Login error:', error);
-          alert('Error logging in');
+          console.error('Login error:', error.message);
+          alert(error.message);
         }
       };
 
       const handleRegister = async () => {
         try {
-          const { error } = await supabase.auth.signUp({ email, password });
-          if (error) alert(error.message);
-          else {
-            const { data: { user } } = await supabase.auth.getUser();
-            setUser(user);
-            setView('dashboard');
-          }
+          await auth.createUserWithEmailAndPassword(email, password);
+          console.log('Registration successful');
         } catch (error) {
-          console.error('Register error:', error);
-          alert('Error registering');
+          console.error('Register error:', error.message);
+          alert(error.message);
         }
       };
 
       const handleLogout = async () => {
         try {
-          await supabase.auth.signOut();
-          setUser(null);
-          setView('login');
+          await auth.signOut();
+          console.log('Logout successful');
         } catch (error) {
-          console.error('Logout error:', error);
+          console.error('Logout error:', error.message);
         }
       };
 
       const createAgent = async () => {
         try {
+          const token = await user.getIdToken();
           const response = await fetch('https://agentbuilderbackend.onrender.com/create_agent', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session.access_token}`,
+              'Authorization': `Bearer ${token}`,
             },
-            body: JSON.stringify({ ...agentConfig, user_id: user.id }),
+            body: JSON.stringify({ ...agentConfig, user_id: user.uid }),
           });
           if (response.ok) {
+            await db.collection('agents').add({
+              user_id: user.uid,
+              name: agentConfig.name,
+              prompt: agentConfig.prompt,
+              tools: agentConfig.tools,
+              trainingData: agentConfig.trainingData,
+              created_at: firebase.firestore.FieldValue.serverTimestamp(),
+            });
             setAgentCreated(true);
             setMessages([{ sender: 'system', text: `Agent ${agentConfig.name} created!` }]);
-            const embed = `<iframe src="https://agentbuilderbackend.onrender.com/widget/${user.id}/${agentConfig.name}" width="100%" height="500px"></iframe>`;
+            const embed = `<iframe src="https://agentbuilderbackend.onrender.com/widget/${user.uid}/${agentConfig.name}" width="100%" height="500px"></iframe>`;
             setEmbedCode(embed);
+            console.log('Agent created successfully');
           } else {
+            const error = await response.json();
+            console.error('Failed to create agent:', error);
             alert('Failed to create agent');
           }
         } catch (error) {
-          console.error('Error creating agent:', error);
+          console.error('Error creating agent:', error.message);
           alert('Error creating agent');
         }
       };
@@ -126,30 +128,30 @@
         setMessages(newMessages);
         setInput('');
         try {
+          const token = await user.getIdToken();
           const response = await fetch('https://agentbuilderbackend.onrender.com/chat', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session.access_token}`,
+              'Authorization': `Bearer ${token}`,
             },
-            body: JSON.stringify({ message: input, user_id: user.id, agent_name: agentConfig.name }),
+            body: JSON.stringify({ message: input, user_id: user.uid, agent_name: agentConfig.name }),
           });
           const data = await response.json();
+          await db.collection('chat_history').add({
+            user_id: user.uid,
+            agent_name: agentConfig.name,
+            message: input,
+            response: data.response,
+            created_at: firebase.firestore.FieldValue.serverTimestamp(),
+          });
           setMessages([...newMessages, { sender: 'agent', text: data.response }]);
+          console.log('Message sent and saved');
         } catch (error) {
-          console.error('Error sending message:', error);
+          console.error('Error sending message:', error.message);
           setMessages([...newMessages, { sender: 'system', text: 'Error: Could not get response' }]);
         }
       };
-
-      if (!supabase) {
-        return (
-          <div className="container mx-auto p-4 text-red-500">
-            Error: Supabase library failed to load from local file or fallback CDN.
-            <p>Debug: Check browser console for details. Ensure /supabase.min.js is accessible.</p>
-          </div>
-        );
-      }
 
       if (!user) {
         return (
@@ -314,23 +316,7 @@
       );
     };
 
-    // Initialize Supabase and render
-    let supabase = null;
-    if (typeof Supabase !== 'undefined') {
-      try {
-        supabase = Supabase.createClient(
-          'https://lakxetbfkozevwlelzaj.supabase.co',
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxha3hldGJma296ZXZ3bGVsemFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgwMTcyNzMsImV4cCI6MjA2MzU5MzI3M30.OPKXM8eXcSp_a9GW2F_Jbto_UOTywj8HqyJ4dYqLLog'
-        );
-        console.log('Supabase initialized successfully');
-      } catch (error) {
-        console.error('Failed to initialize Supabase client:', error.message);
-      }
-    } else {
-      console.error('Supabase global variable not defined. Check local file /supabase.min.js or fallback CDN.');
-    }
-
-    ReactDOM.render(<App supabase={supabase} />, document.getElementById('root'));
+    ReactDOM.render(<App />, document.getElementById('root'));
   </script>
 </body>
 </html>
